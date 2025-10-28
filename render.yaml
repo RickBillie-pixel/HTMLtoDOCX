@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: html-to-pdf-converter
+    name: html-to-pdf
     env: docker
     region: frankfurt  # Of oregon/singapore
     plan: starter  # Of free voor testing
