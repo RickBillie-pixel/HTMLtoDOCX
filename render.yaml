@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: html-to-pdf-converter
+    env: docker
+    region: frankfurt  # Of oregon/singapore
+    plan: starter  # Of free voor testing
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Environment variables
+    envVars:
+      - key: RENDER_EXTERNAL_URL
+        sync: false
+        # Dit wordt automatisch ingesteld door Render
+      
+    # Disk voor persistent storage van PDFs
+    disk:
+      name: pdf-storage
+      mountPath: /app/static/output
+      sizeGB: 1
+    
+    # Auto-deploy bij push
+    autoDeploy: true
