@@ -4,12 +4,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
+from pdf2docx import Converter
 from enum import Enum
 import os
 import base64
 from pathlib import Path
 import logging
-import subprocess
 import tempfile
 
 # Logging configuratie
@@ -87,12 +87,11 @@ async def health():
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_html_to_pdf(request: ConversionRequest):
     """
-    Converteer HTML naar PDF of DOCX met volledige CSS ondersteuning
+    Converteer HTML naar PDF of DOCX
     
-    - **PDF**: Ondersteunt alle moderne CSS: @page, running(header), string-set, flexbox, font-face, etc.
-    - **DOCX**: Converteert HTML naar Word document met behoud van opmaak
-    - Gebruikt Chromium print rendering voor perfecte PDF output
-    - Gebruikt Pandoc voor Word conversie
+    - **PDF**: Gebruikt Chromium voor perfecte CSS rendering
+    - **DOCX**: Genereert eerst PDF, converteert dan naar bewerkbaar Word document
+    - Beide formaten gebruiken dezelfde rendering engine voor consistente output
     - UTF-8 encoding voor correcte karakters
     """
     try:
@@ -101,7 +100,6 @@ async def convert_html_to_pdf(request: ConversionRequest):
         
         # Valideer en corrigeer filename
         if not request.filename.endswith(f'.{file_extension}'):
-            # Verwijder andere extensies
             base_name = request.filename.rsplit('.', 1)[0] if '.' in request.filename else request.filename
             request.filename = f"{base_name}.{file_extension}"
         
@@ -111,12 +109,24 @@ async def convert_html_to_pdf(request: ConversionRequest):
         
         logger.info(f"Starting {request.output_format.upper()} conversion for: {safe_filename}")
         
+        # Stap 1: Genereer altijd eerst een PDF (perfecte rendering)
         if request.output_format == OutputFormat.pdf:
-            # PDF generatie met Playwright
+            # Direct PDF output
             await generate_pdf(request.html, output_path)
         else:
-            # DOCX generatie met Pandoc
-            await generate_docx(request.html, output_path)
+            # Voor DOCX: eerst PDF maken, dan converteren
+            temp_pdf = OUTPUT_DIR / f"temp_{safe_filename.replace('.docx', '.pdf')}"
+            try:
+                # Genereer PDF
+                await generate_pdf(request.html, temp_pdf)
+                
+                # Converteer PDF naar DOCX
+                await pdf_to_docx(temp_pdf, output_path)
+                
+            finally:
+                # Cleanup temp PDF
+                if temp_pdf.exists():
+                    temp_pdf.unlink()
         
         logger.info(f"{request.output_format.upper()} successfully generated: {safe_filename}")
         
@@ -193,49 +203,18 @@ async def generate_pdf(html: str, output_path: Path):
             await browser.close()
 
 
-async def generate_docx(html: str, output_path: Path):
-    """Genereer DOCX met Pandoc"""
+async def pdf_to_docx(pdf_path: Path, docx_path: Path):
+    """Converteer PDF naar DOCX met pdf2docx"""
     try:
-        # Schrijf HTML naar temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as tmp:
-            tmp.write(html)
-            tmp_html_path = tmp.name
+        # Converteer PDF naar DOCX
+        cv = Converter(str(pdf_path))
+        cv.convert(str(docx_path), start=0, end=None)
+        cv.close()
         
-        try:
-            # Bouw pandoc command
-            pandoc_cmd = [
-                'pandoc',
-                tmp_html_path,
-                '-f', 'html',
-                '-t', 'docx',
-                '-o', str(output_path),
-            ]
-            
-            # Voeg reference doc toe als die bestaat
-            reference_doc = Path('/app/reference.docx')
-            if reference_doc.exists():
-                pandoc_cmd.extend(['--reference-doc', str(reference_doc)])
-            
-            # Converteer met pandoc
-            result = subprocess.run(
-                pandoc_cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            
-            logger.info(f"Pandoc conversion successful")
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Pandoc error: {e.stderr}")
-            raise Exception(f"Pandoc conversie fout: {e.stderr}")
-        finally:
-            # Cleanup temp file
-            if os.path.exists(tmp_html_path):
-                os.remove(tmp_html_path)
-                
+        logger.info(f"PDF to DOCX conversion successful")
+        
     except Exception as e:
-        raise Exception(f"DOCX generatie fout: {str(e)}")
+        raise Exception(f"PDF naar DOCX conversie fout: {str(e)}")
 
 
 @app.delete("/output/{filename}")
