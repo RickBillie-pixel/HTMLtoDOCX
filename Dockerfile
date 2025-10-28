@@ -3,12 +3,11 @@ FROM python:3.11-bookworm
 # Werk directory
 WORKDIR /app
 
-# Systeem dependencies voor Playwright, Chromium en Pandoc
+# Systeem dependencies voor Playwright en Chromium
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     ca-certificates \
-    pandoc \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-freefont-ttf \
