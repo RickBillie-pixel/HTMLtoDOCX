@@ -4,3 +4,4 @@ playwright==1.41.0
 pydantic==2.5.3
 aiofiles==23.2.1
 python-multipart==0.0.6
+pdf2docx==0.5.8
